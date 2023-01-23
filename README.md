@@ -2,7 +2,17 @@
   <img src="https://cloud.githubusercontent.com/assets/4413963/18860410/26f64de8-84b8-11e6-9284-350308eed30a.png"/>
 </div>
 
-# React Sortable Tree
+# @uniweb/react-sortable-tree
+
+Fork of [react-sortable-tree](https://github.com/frontend-collective/react-sortable-tree).
+
+Types definitions at `types/` copied from [@types/react-sortable-tree](https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react-sortable-tree).
+
+## Changes:
+
+* [Ability to drop external dragsource below tree](https://github.com/frontend-collective/react-sortable-tree/issues/483)
+
+# Original react-sortable-tree info
 
 ![NPM version](https://img.shields.io/npm/v/react-sortable-tree.svg?style=flat)
 ![NPM license](https://img.shields.io/npm/l/react-sortable-tree.svg?style=flat)
