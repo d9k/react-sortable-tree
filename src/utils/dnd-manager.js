@@ -216,6 +216,15 @@ export default class DndManager {
       },
 
       hover: (dropTargetProps, monitor, component) => {
+
+        // console.log('__TEST_2__ hover:', dropTargetProps, monitor, component);
+
+        /**
+         * fix "Can't drop external dragsource below tree"
+         * from https://github.com/frontend-collective/react-sortable-tree/issues/483#issuecomment-581139473
+         * */
+
+        let targetIndex = 0;
         const targetDepth = this.getTargetDepth(
           dropTargetProps,
           monitor,
@@ -231,6 +240,26 @@ export default class DndManager {
         if (!needsRedraw) {
           return;
         }
+        // eslint-disable-next-line react/no-find-dom-node
+        const hoverBoundingRect = findDOMNode(
+          component
+        ).getBoundingClientRect();
+        // Get vertical middle
+        const hoverMiddleY =
+          (hoverBoundingRect.bottom - hoverBoundingRect.top) / 2;
+        const clientOffset = monitor.getClientOffset();
+        // Get pixels to the top
+        const hoverClientY = clientOffset.y - hoverBoundingRect.top;
+
+        // dragUp
+        if (hoverClientY <= hoverMiddleY) {
+          targetIndex = dropTargetProps.treeIndex;
+        }
+
+        // dragDown
+        if (hoverClientY >= hoverMiddleY) {
+          targetIndex = dropTargetProps.treeIndex + 1;
+        }
 
         // throttle `dragHover` work to available animation frames
         cancelAnimationFrame(this.rafId);
@@ -238,7 +267,7 @@ export default class DndManager {
           this.dragHover({
             node: draggedNode,
             path: monitor.getItem().path,
-            minimumTreeIndex: dropTargetProps.listIndex,
+            minimumTreeIndex: targetIndex,
             depth: targetDepth,
           });
         });
