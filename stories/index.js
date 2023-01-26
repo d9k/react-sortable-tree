@@ -20,6 +20,7 @@ import ThemesExample from './themes';
 import TouchSupportExample from './touch-support';
 import TreeDataIOExample from './tree-data-io';
 import TreeToTreeExample from './tree-to-tree';
+import RowHeight from "./row-height";
 
 storiesOf('Basics', module)
   .add('Minimal implementation', () => <BarebonesExample />)
@@ -42,4 +43,6 @@ storiesOf('Advanced', module)
   .add('Prevent some nodes from having children', () => <ChildlessNodes />)
   .add('Minimal implementation without Dnd Context', () => (
     <BarebonesExampleNoContext />
-  ));
+  ))
+  .add('Row height function', () => <RowHeight isVirtualized={false} />)
+  .add('Row height function + react-virtualized', () => <RowHeight isVirtualized />);
