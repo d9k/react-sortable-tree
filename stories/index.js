@@ -18,6 +18,7 @@ import TouchSupportExample from './touch-support';
 import TreeDataIOExample from './tree-data-io';
 import TreeToTreeExample from './tree-to-tree';
 import RowDirectionExample from './rtl-support';
+import RowHeight from "./row-height";
 import './generic.css';
 
 import { handleClick, SANDBOX_URL } from './sandbox-utils';
@@ -89,4 +90,6 @@ storiesOf('Advanced', module)
   )
   .add('Prevent some nodes from having children', () =>
     wrapWithSource(<ChildlessNodes />, 'childless-nodes.js')
-  );
+  )
+  .add('Row height function', () => wrapWithSource(<RowHeight isVirtualized={false} />, 'row-height.js'))
+  .add('Row height function + react-virtualized', () => wrapWithSource( <RowHeight isVirtualized />, 'row-height.js'));
