@@ -4,6 +4,7 @@ import withScrolling, {
   createVerticalStrength,
 } from 'frontend-collective-react-dnd-scrollzone';
 import isEqual from 'lodash.isequal';
+import debounce from 'lodash.debounce';
 import PropTypes from 'prop-types';
 import React, { Component } from 'react';
 import { DndContext, DndProvider } from 'react-dnd';
@@ -39,43 +40,13 @@ import {
 
 let treeIdCounter = 1;
 
-const mergeTheme = props => {
-  const merged = {
-    ...props,
-    style: { ...props.theme.style, ...props.style },
-    innerStyle: { ...props.theme.innerStyle, ...props.innerStyle },
-    reactVirtualizedListProps: {
-      ...props.theme.reactVirtualizedListProps,
-      ...props.reactVirtualizedListProps,
-    },
-  };
-
-  const overridableDefaults = {
-    nodeContentRenderer: NodeRendererDefault,
-    placeholderRenderer: PlaceholderRendererDefault,
-    rowHeight: 62,
-    scaffoldBlockPxWidth: 44,
-    slideRegionSize: 100,
-    treeNodeRenderer: TreeNode,
-  };
-  Object.keys(overridableDefaults).forEach(propKey => {
-    // If prop has been specified, do not change it
-    // If prop is specified in theme, use the theme setting
-    // If all else fails, fall back to the default
-    if (props[propKey] === null) {
-      merged[propKey] =
-        typeof props.theme[propKey] !== 'undefined'
-          ? props.theme[propKey]
-          : overridableDefaults[propKey];
-    }
-  });
-
-  return merged;
-};
-
 class ReactSortableTree extends Component {
   constructor(props) {
     super(props);
+
+    this.refReactVirtualizedList = React.createRef();
+    this.rowHeightRecomputing = false;
+    this.rowHeightRerunPlanned = false;
 
     const {
       dndType,
@@ -83,7 +54,7 @@ class ReactSortableTree extends Component {
       treeNodeRenderer,
       isVirtualized,
       slideRegionSize,
-    } = mergeTheme(props);
+    } = this.mergeTheme(props);
 
     this.dndManager = new DndManager(this);
 
@@ -92,6 +63,7 @@ class ReactSortableTree extends Component {
     treeIdCounter += 1;
     this.dndType = dndType || this.treeId;
     this.nodeContentRenderer = this.dndManager.wrapSource(nodeContentRenderer);
+    this.firstRenderAfterDragStart = true;
     this.treePlaceholderRenderer = this.dndManager.wrapPlaceholder(
       TreePlaceholder
     );
@@ -130,6 +102,10 @@ class ReactSortableTree extends Component {
     this.dragHover = this.dragHover.bind(this);
     this.endDrag = this.endDrag.bind(this);
     this.drop = this.drop.bind(this);
+    this.rowHeightsVirtualListRecompute = this.rowHeightsVirtualListRecompute.bind(this);
+    this.rowHeightsVirtualListRecomputeRerunAfterDone = this.rowHeightsVirtualListRecomputeRerunAfterDone.bind(this);
+    this.rowHeightsVirtualListRecomputeRerunAfterDoneDebounced = debounce(this.rowHeightsVirtualListRecomputeRerunAfterDone, 100).bind(this);
+    this.rowHeightsRecomputeRequired = this.rowHeightsRecomputeRequired.bind(this);
     this.handleDndMonitorChange = this.handleDndMonitorChange.bind(this);
   }
 
@@ -150,6 +126,83 @@ class ReactSortableTree extends Component {
     this.clearMonitorSubscription = this.props.dragDropManager
       .getMonitor()
       .subscribeToStateChange(this.handleDndMonitorChange);
+  }
+
+  mergeTheme(props) {
+    const merged = {
+      ...props,
+      style: { ...props.theme.style, ...props.style },
+      innerStyle: { ...props.theme.innerStyle, ...props.innerStyle },
+      reactVirtualizedListProps: {
+        ...props.theme.reactVirtualizedListProps,
+        ...props.reactVirtualizedListProps,
+        ref: (newRef) => {
+          // eslint-disable-next-line no-param-reassign
+          this.refReactVirtualizedList.current = newRef;
+          const propsVListRef = props.reactVirtualizedListProps.ref;
+
+          if (propsVListRef) {
+            if (typeof propsVListRef === 'function') {
+              propsVListRef(newRef)
+            } else {
+              propsVListRef.current = newRef;
+            }
+          }
+        }
+      },
+    };
+
+    const overridableDefaults = {
+      nodeContentRenderer: NodeRendererDefault,
+      placeholderRenderer: PlaceholderRendererDefault,
+      rowHeight: 62,
+      scaffoldBlockPxWidth: 44,
+      slideRegionSize: 100,
+      treeNodeRenderer: TreeNode,
+    };
+    Object.keys(overridableDefaults).forEach(propKey => {
+      // If prop has been specified, do not change it
+      // If prop is specified in theme, use the theme setting
+      // If all else fails, fall back to the default
+      if (props[propKey] === null) {
+        merged[propKey] =
+        typeof props.theme[propKey] !== 'undefined'
+        ? props.theme[propKey]
+        : overridableDefaults[propKey];
+      }
+    });
+
+    return merged;
+  };
+
+  rowHeightsVirtualListRecompute() {
+    if (this.props.isVirtualized) {
+      if (!this.rowHeightRecomputing) {
+      this.rowHeightRecomputing = true;
+
+      // TODO seems like calling recomputeRowHeights() immediately aborts dragging :c
+      this.refReactVirtualizedList.current.wrappedInstance.current.recomputeRowHeights();
+      this.rowHeightRecomputing = false;
+      if (this.rowHeightRerunPlanned) {
+        this.rowHeightRerunPlanned = false;
+        this.rowHeightsVirtualListRecompute();
+      }
+      }
+    } else {
+      // this.forceUpdate();
+    }
+  }
+
+  rowHeightsVirtualListRecomputeRerunAfterDone() {
+    if (this.rowHeightRecomputing) {
+      this.rowHeightRerunPlanned = true;
+    } else {
+      this.rowHeightsVirtualListRecompute();
+    }
+  }
+
+  rowHeightsRecomputeRequired() {
+    this.rowHeightsVirtualListRecomputeRerunAfterDoneDebounced();
   }
 
   static getDerivedStateFromProps(nextProps, prevState) {
@@ -195,7 +248,7 @@ class ReactSortableTree extends Component {
     instanceProps.searchQuery = nextProps.searchQuery;
     instanceProps.searchFocusOffset = nextProps.searchFocusOffset;
     newState.instanceProps = {...instanceProps, ...newState.instanceProps };
- 
+
     return newState;
   }
 
@@ -209,6 +262,10 @@ class ReactSortableTree extends Component {
           draggedNode: this.state.draggedNode,
         });
       }
+    }
+
+    if (this.props.treeData !== prevProps.treeData) {
+      this.rowHeightsRecomputeRequired();
     }
   }
 
@@ -357,6 +414,8 @@ class ReactSortableTree extends Component {
   }
 
   startDrag({ path }) {
+    this.firstRenderAfterDragStart = true;
+
     this.setState(prevState => {
       const {
         treeData: draggingTreeData,
@@ -408,16 +467,23 @@ class ReactSortableTree extends Component {
       const rows = this.getRows(addedResult.treeData);
       const expandedParentPath = rows[addedResult.treeIndex].path;
 
+      const changeArgs = {
+        treeData: newDraggingTreeData,
+        path: expandedParentPath.slice(0, -1),
+        newNode: ({ node }) => ({ ...node, expanded: true }),
+        getNodeKey: this.props.getNodeKey,
+      };
+
+      // console.log('react-sortable-tree: dragHover(): changeArgs:', changeArgs);
+      console.log('react-sortable-tree: dragHover(): changeArgs.path:', changeArgs.path);
+
+      this.rowHeightsRecomputeRequired();
+
       return {
         draggedNode,
         draggedDepth,
         draggedMinimumTreeIndex,
-        draggingTreeData: changeNodeAtPath({
-          treeData: newDraggingTreeData,
-          path: expandedParentPath.slice(0, -1),
-          newNode: ({ node }) => ({ ...node, expanded: true }),
-          getNodeKey: this.props.getNodeKey,
-        }),
+        draggingTreeData: changeNodeAtPath(changeArgs),
         // reset the scroll focus so it doesn't jump back
         // to a search result while dragging
         searchFocusTreeIndex: null,
@@ -427,6 +493,9 @@ class ReactSortableTree extends Component {
   }
 
   endDrag(dropResult) {
+
+    console.log('react-sortable-tree: endDrag(): dropResult:', dropResult);
+
     const { instanceProps } = this.state;
 
     const resetTree = () =>
@@ -479,10 +548,13 @@ class ReactSortableTree extends Component {
         prevTreeIndex: treeIndex,
       });
     }
+
+    this.rowHeightsRecomputeRequired();
   }
 
   drop(dropResult) {
     this.moveNode(dropResult);
+    this.rowHeightsRecomputeRequired();
   }
 
   canNodeHaveChildren(node) {
@@ -552,7 +624,7 @@ class ReactSortableTree extends Component {
       scaffoldBlockPxWidth,
       searchFocusOffset,
       rowDirection,
-    } = mergeTheme(this.props);
+    } = this.mergeTheme(this.props);
     const TreeNodeRenderer = this.treeNodeRenderer;
     const NodeContentRenderer = this.nodeContentRenderer;
     const nodeKey = path[path.length - 1];
@@ -620,7 +692,7 @@ class ReactSortableTree extends Component {
       reactVirtualizedListProps,
       getNodeKey,
       rowDirection,
-    } = mergeTheme(this.props);
+    } = this.mergeTheme(this.props);
     const {
       searchMatches,
       searchFocusTreeIndex,
@@ -712,6 +784,7 @@ class ReactSortableTree extends Component {
                   ? rowHeight
                   : ({ index }) =>
                       rowHeight({
+                        draggedNode,
                         index,
                         treeIndex: index,
                         node: rows[index].node,
@@ -744,6 +817,7 @@ class ReactSortableTree extends Component {
               typeof rowHeight !== 'function'
                 ? rowHeight
                 : rowHeight({
+                    draggedNode: this.firstRenderAfterDragStart ? null : draggedNode ,
                     index,
                     treeIndex: index,
                     node: row.node,
@@ -758,6 +832,8 @@ class ReactSortableTree extends Component {
         })
       );
     }
+
+    this.firstRenderAfterDragStart = false;
 
     return (
       <div

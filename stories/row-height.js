@@ -56,14 +56,23 @@ const YourExternalNodeComponent = DragSource(
 )(externalNodeBaseComponent);
 
 function canDrop(args) {
-  console.log('canDrop:', args);
-
   const { node, nextParent } = args;
 
   if (node.isPerson) {
     return nextParent && !nextParent.isPerson;
   }
-  return true;
+  return !nextParent;
+}
+
+
+function calcRowHeight(args) {
+  console.log('calcRowHeight:', args);
+
+  if (args.node === args.draggedNode) {
+    return 10;
+  }
+
+  return 62;
 }
 
 class App extends Component {
@@ -113,12 +122,7 @@ class App extends Component {
       ],
     };
 
-    this.draggedNode = null;
-
-    this.onDragStateChanged = this.onDragStateChanged.bind(this);
-    this.calcRowHeight = this.calcRowHeight.bind(this);
     this.onChange= this.onChange.bind(this);
-    this.virtualListRecomputeRowHeights = this.virtualListRecomputeRowHeights.bind(this);
 
     this.refReactVirtualizedList = React.createRef();
 
@@ -126,70 +130,13 @@ class App extends Component {
       // autoHeight: true,
       ref: this.refReactVirtualizedList,
     }
-
-    this.recomputingRowHeight = false;
-  }
-
-  onDragStateChanged(args) {
-    console.log('onDragStateChanged:', args);
-
-    const { draggedNode } = args;
-    const { isVirtualized } = this.props;
-    this.draggedNode = draggedNode;
-
-    const app = this;
-
-    if (!draggedNode && !isVirtualized) {
-        setTimeout(
-        () => {
-          app.setState((state) => {
-            console.log('state:', state);
-            return ({
-              treeData: [...state.treeData]
-            });
-          });
-        },
-        10
-        );
-    }
-
-    if (draggedNode) {
-      this.dragInterval = setInterval(this.virtualListRecomputeRowHeights, 250);
-    } else {
-      clearInterval(this.dragInterval);
-    this.virtualListRecomputeRowHeights();
-  }
-
-    // this.virtualListRecomputeRowHeights();
-  }
-
-  calcRowHeight(args) {
-    console.log('calcRowHeight:', args);
-
-    if (args.node === this.draggedNode) {
-      return 10;
-    }
-
-    return 62;
   }
 
   onChange(newTreeData) {
     this.setState({treeData: newTreeData});
   }
 
-  virtualListRecomputeRowHeights() {
-    if (this.props.isVirtualized && !this.recomputingRowHeight) {
-      this.recomputingRowHeight = true;
-      console.log('calling recomputeRowHeights()');
-      // TODO seems like calling recomputeRowHeights() aborts dragging :c
-      this.refReactVirtualizedList.current.wrappedInstance.current.recomputeRowHeights();
-      this.recomputingRowHeight = false;
-    }
-  }
-
   render() {
-    console.log('render');
-
     return (
       <DndProvider backend={HTML5Backend}>
         <div>
@@ -198,10 +145,9 @@ class App extends Component {
               canDrop={canDrop}
               dndType={externalNodeType}
               isVirtualized={this.props.isVirtualized}
-              onDragStateChanged={this.onDragStateChanged}
               reactVirtualizedListProps={this.reactVirtualizedListProps}
-              rowHeight={this.calcRowHeight}
               onChange={this.onChange}
+              rowHeight={calcRowHeight}
               treeData={this.state.treeData}
             />
           </div>

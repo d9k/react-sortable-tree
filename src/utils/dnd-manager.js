@@ -6,6 +6,7 @@ import { memoizedInsertNode } from './memoized-tree-data-utils';
 export default class DndManager {
   constructor(treeRef) {
     this.treeRef = treeRef;
+    this.lastHoverClientOffset = null;
   }
 
   get startDrag() {
@@ -159,6 +160,8 @@ export default class DndManager {
   wrapSource(el) {
     const nodeDragSource = {
       beginDrag: props => {
+        this.lastHoverClientOffset = null;
+
         this.startDrag(props);
 
         return {
@@ -216,9 +219,6 @@ export default class DndManager {
       },
 
       hover: (dropTargetProps, monitor, component) => {
-
-        // console.log('__TEST_2__ hover:', dropTargetProps, monitor, component);
-
         /**
          * fix "Can't drop external dragsource below tree"
          * from https://github.com/frontend-collective/react-sortable-tree/issues/483#issuecomment-581139473
@@ -231,11 +231,25 @@ export default class DndManager {
           component
         );
         const draggedNode = monitor.getItem().node;
+
+        // TODO scroll position?
+        const clientOffset = monitor.getClientOffset();
+
         const needsRedraw =
-          // Redraw if hovered above different nodes
-          dropTargetProps.node !== draggedNode ||
-          // Or hovered above the same node but at a different depth
-          targetDepth !== dropTargetProps.path.length - 1;
+          (
+            // Redraw if hovered above different nodes
+            dropTargetProps.node !== draggedNode ||
+            // Or hovered above the same node but at a different depth
+            targetDepth !== dropTargetProps.path.length - 1
+          ) && (
+            !this.lastHoverClientOffset ||
+            (
+              Math.abs(this.lastHoverClientOffset.x - clientOffset.x) > 0.1 ||
+              Math.abs(this.lastHoverClientOffset.x - clientOffset.x) > 0.1
+            )
+          );
+
+        this.lastHoverClientOffset = clientOffset;
 
         if (!needsRedraw) {
           return;
@@ -247,7 +261,7 @@ export default class DndManager {
         // Get vertical middle
         const hoverMiddleY =
           (hoverBoundingRect.bottom - hoverBoundingRect.top) / 2;
-        const clientOffset = monitor.getClientOffset();
+
         // Get pixels to the top
         const hoverClientY = clientOffset.y - hoverBoundingRect.top;
 
@@ -261,6 +275,8 @@ export default class DndManager {
           targetIndex = dropTargetProps.treeIndex + 1;
         }
 
+        // console.log('dnd-manager: hover:', {...dropTargetProps, draggedNode, targetDepth, targetIndex});
+
         // throttle `dragHover` work to available animation frames
         cancelAnimationFrame(this.rafId);
         this.rafId = requestAnimationFrame(() => {
@@ -268,6 +284,7 @@ export default class DndManager {
             node: draggedNode,
             path: monitor.getItem().path,
             minimumTreeIndex: targetIndex,
+            // minimumTreeIndex: dropTargetProps.listIndex,
             depth: targetDepth,
           });
         });
