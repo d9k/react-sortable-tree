@@ -47,8 +47,11 @@ class ReactSortableTree extends Component {
     this.refReactVirtualizedList = React.createRef();
     this.rowHeightRecomputing = false;
     this.rowHeightRerunPlanned = false;
+    this.intervalForceUpdate = null;
 
     const {
+      autoSnapRowsAfter,
+      autoSnapRowsBefore,
       dndType,
       nodeContentRenderer,
       treeNodeRenderer,
@@ -58,12 +61,13 @@ class ReactSortableTree extends Component {
 
     this.dndManager = new DndManager(this);
 
+    this.autoSnapRowsAfter = autoSnapRowsAfter;
+    this.autoSnapRowsBefore = autoSnapRowsBefore;
     // Wrapping classes for use with react-dnd
     this.treeId = `rst__${treeIdCounter}`;
     treeIdCounter += 1;
     this.dndType = dndType || this.treeId;
     this.nodeContentRenderer = this.dndManager.wrapSource(nodeContentRenderer);
-    this.firstRenderAfterDragStart = true;
     this.treePlaceholderRenderer = this.dndManager.wrapPlaceholder(
       TreePlaceholder
     );
@@ -102,11 +106,31 @@ class ReactSortableTree extends Component {
     this.dragHover = this.dragHover.bind(this);
     this.endDrag = this.endDrag.bind(this);
     this.drop = this.drop.bind(this);
+    this.getRows = this.getRows.bind(this);
+    this.intervalForceUpdateStart = this.intervalForceUpdateStart.bind(this);
+    this.intervalForceUpdateStop = this.intervalForceUpdateStop.bind(this);
     this.rowHeightsVirtualListRecompute = this.rowHeightsVirtualListRecompute.bind(this);
     this.rowHeightsVirtualListRecomputeRerunAfterDone = this.rowHeightsVirtualListRecomputeRerunAfterDone.bind(this);
     this.rowHeightsVirtualListRecomputeRerunAfterDoneDebounced = debounce(this.rowHeightsVirtualListRecomputeRerunAfterDone, 100).bind(this);
     this.rowHeightsRecomputeRequired = this.rowHeightsRecomputeRequired.bind(this);
     this.handleDndMonitorChange = this.handleDndMonitorChange.bind(this);
+  }
+
+  get autoSnapEnabled() {
+    return !!(this.autoSnapRowsAfter || this.autoSnapRowsBefore);
+  }
+
+  intervalForceUpdateStart() {
+    /** redraw when out of tree drop area */
+    setInterval(() => {
+      this.forceUpdate()
+    }, 500);
+
+    this.intervalForceUpdateStop();
+  }
+
+  intervalForceUpdateStop() {
+    return this.intervalForceUpdate && clearInterval(this.intervalForceUpdate);
   }
 
   componentDidMount() {
@@ -176,8 +200,7 @@ class ReactSortableTree extends Component {
   };
 
   rowHeightsVirtualListRecompute() {
-    if (this.props.isVirtualized) {
-      if (!this.rowHeightRecomputing) {
+    if (this.props.isVirtualized && !this.rowHeightRecomputing) {
       this.rowHeightRecomputing = true;
 
       // TODO seems like calling recomputeRowHeights() immediately aborts dragging :c
@@ -186,7 +209,6 @@ class ReactSortableTree extends Component {
       if (this.rowHeightRerunPlanned) {
         this.rowHeightRerunPlanned = false;
         this.rowHeightsVirtualListRecompute();
-      }
       }
     } else {
       // this.forceUpdate();
@@ -311,13 +333,17 @@ class ReactSortableTree extends Component {
     });
   }
 
-  moveNode({
-    node,
-    path: prevPath,
-    treeIndex: prevTreeIndex,
-    depth,
-    minimumTreeIndex,
-  }) {
+  moveNode(args) {
+    const {
+      node,
+      path: prevPath,
+      treeIndex: prevTreeIndex,
+      depth,
+      minimumTreeIndex,
+    } = args;
+
+    console.log('react-sortable-tree: moveNode():', args);
+
     const {
       treeData,
       treeIndex,
@@ -415,6 +441,7 @@ class ReactSortableTree extends Component {
 
   startDrag({ path }) {
     this.firstRenderAfterDragStart = true;
+    this.intervalForceUpdateStart();
 
     this.setState(prevState => {
       const {
@@ -450,7 +477,12 @@ class ReactSortableTree extends Component {
       return;
     }
 
+
+    console.log('react-sortable-tree: dragHover():', {draggedNode, draggedDepth, draggedMinimumTreeIndex});
+
     this.setState(({ draggingTreeData, instanceProps }) => {
+      // console.log('react-sortable-tree: dragHover(): tree:', {draggingTreeData, treeData: instanceProps.treeData});
+
       // Fall back to the tree data if something is being dragged in from
       //  an external element
       const newDraggingTreeData = draggingTreeData || instanceProps.treeData;
@@ -493,8 +525,9 @@ class ReactSortableTree extends Component {
   }
 
   endDrag(dropResult) {
-
     console.log('react-sortable-tree: endDrag(): dropResult:', dropResult);
+
+    this.intervalForceUpdateStop();
 
     const { instanceProps } = this.state;
 
@@ -552,7 +585,29 @@ class ReactSortableTree extends Component {
     this.rowHeightsRecomputeRequired();
   }
 
-  drop(dropResult) {
+  drop(dropResultRaw) {
+    this.intervalForceUpdateStop();
+
+    let dropResult = {
+      ...dropResultRaw,
+    }
+
+    if (this.dndManager.lastAutoSnapResult) {
+      const { path, targetDepth, targetIndex } = this.dndManager.lastAutoSnapResult;
+      dropResult = {
+        ...dropResult,
+        depth: targetDepth,
+        path,
+        minimumTreeIndex: targetIndex,
+      }
+    }
+
+    console.log('react-sortable-tree: drop: ', {
+      dropResultRaw,
+      dropResult,
+      lastAutoSnaoResult: this.dndManager.lastAutoSnapResult
+    });
+
     this.moveNode(dropResult);
     this.rowHeightsRecomputeRequired();
   }
@@ -627,6 +682,9 @@ class ReactSortableTree extends Component {
     } = this.mergeTheme(this.props);
     const TreeNodeRenderer = this.treeNodeRenderer;
     const NodeContentRenderer = this.nodeContentRenderer;
+
+    const { autoSnapEnabled } = this;
+
     const nodeKey = path[path.length - 1];
     const isSearchMatch = nodeKey in matchKeys;
     const isSearchFocus =
@@ -655,6 +713,8 @@ class ReactSortableTree extends Component {
       rowDirection,
     };
 
+    // console.log(`react-sortable-tree: renderRow(): ${JSON.stringify(sharedProps.path)}`, {nodeProps, sharedProps});
+
     return (
       <TreeNodeRenderer
         style={style}
@@ -668,10 +728,12 @@ class ReactSortableTree extends Component {
         {...sharedProps}
       >
         <NodeContentRenderer
+          autoSnapEnabled={autoSnapEnabled}
           parentNode={parentNode}
           isSearchMatch={isSearchMatch}
           isSearchFocus={isSearchFocus}
           canDrag={rowCanDrag}
+          lastCanDrop={this.dndManager.lastCanDrop}
           toggleChildrenVisibility={this.toggleChildrenVisibility}
           {...sharedProps}
           {...nodeProps}
@@ -847,6 +909,9 @@ class ReactSortableTree extends Component {
 }
 
 ReactSortableTree.propTypes = {
+  autoSnapRowsAfter: PropTypes.number,
+  autoSnapRowsBefore: PropTypes.number,
+
   dragDropManager: PropTypes.shape({
     getMonitor: PropTypes.func,
   }).isRequired,
@@ -981,6 +1046,8 @@ ReactSortableTree.propTypes = {
 };
 
 ReactSortableTree.defaultProps = {
+  autoSnapRowsAfter: 0,
+  autoSnapRowsBefore: 0,
   canDrag: true,
   canDrop: null,
   canNodeHaveChildren: () => true,

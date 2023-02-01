@@ -7,6 +7,7 @@ import './node-renderer-default.css';
 class NodeRendererDefault extends Component {
   render() {
     const {
+      autoSnapEnabled,
       scaffoldBlockPxWidth,
       toggleChildrenVisibility,
       connectDragPreview,
@@ -14,6 +15,7 @@ class NodeRendererDefault extends Component {
       isDragging,
       canDrop,
       canDrag,
+      lastCanDrop,
       node,
       title,
       subtitle,
@@ -32,6 +34,11 @@ class NodeRendererDefault extends Component {
       rowDirection,
       ...otherProps
     } = this.props;
+
+    if (node.title === 'New worker') {
+      console.log('node-renderer-default: props:', this.props);
+    }
+
     const nodeTitle = title || node.title;
     const nodeSubtitle = subtitle || node.subtitle;
     const rowDirectionClass = rowDirection === 'rtl' ? 'rst__rtl' : null;
@@ -66,7 +73,9 @@ class NodeRendererDefault extends Component {
     }
 
     const isDraggedDescendant = draggedNode && isDescendant(draggedNode, node);
+
     const isLandingPadActive = !didDrop && isDragging;
+    const isLandingPadCancel = isLandingPadActive && (!canDrop && !(autoSnapEnabled && lastCanDrop));
 
     let buttonStyle = { left: -0.5 * scaffoldBlockPxWidth };
     if (rowDirection === 'rtl') {
@@ -112,7 +121,7 @@ class NodeRendererDefault extends Component {
               className={classnames(
                 'rst__row',
                 isLandingPadActive && 'rst__rowLandingPad',
-                isLandingPadActive && !canDrop && 'rst__rowCancelPad',
+                isLandingPadCancel && 'rst__rowCancelPad',
                 isSearchMatch && 'rst__rowSearchMatch',
                 isSearchFocus && 'rst__rowSearchFocus',
                 rowDirectionClass,
@@ -181,6 +190,7 @@ class NodeRendererDefault extends Component {
 }
 
 NodeRendererDefault.defaultProps = {
+  autoSnapEnabled: false,
   isSearchMatch: false,
   isSearchFocus: false,
   canDrag: false,
@@ -197,6 +207,7 @@ NodeRendererDefault.defaultProps = {
 };
 
 NodeRendererDefault.propTypes = {
+  autoSnapEnabled: PropTypes.bool,
   node: PropTypes.shape({}).isRequired,
   title: PropTypes.oneOfType([PropTypes.func, PropTypes.node]),
   subtitle: PropTypes.oneOfType([PropTypes.func, PropTypes.node]),

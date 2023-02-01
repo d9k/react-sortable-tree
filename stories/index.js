@@ -21,6 +21,7 @@ import TouchSupportExample from './touch-support';
 import TreeDataIOExample from './tree-data-io';
 import TreeToTreeExample from './tree-to-tree';
 import RowHeight from "./row-height";
+import AutoSnapToLevel from "./auto-snap-to-level";
 
 storiesOf('Basics', module)
   .add('Minimal implementation', () => <BarebonesExample />)
@@ -45,4 +46,5 @@ storiesOf('Advanced', module)
     <BarebonesExampleNoContext />
   ))
   .add('Row height function', () => <RowHeight isVirtualized={false} />)
-  .add('Row height function + react-virtualized', () => <RowHeight isVirtualized />);
+  .add('Row height function + react-virtualized', () => <RowHeight isVirtualized />)
+  .add('Auto snap to level', () => <AutoSnapToLevel />);

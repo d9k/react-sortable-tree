@@ -101,6 +101,8 @@ export interface OnMovePreviousAndNextLocation extends PreviousAndNextLocation {
 export type NodeRenderer = React.ComponentType<NodeRendererProps>;
 
 export interface NodeRendererProps {
+    autoSnapEnabled?: boolean;
+    lastCanDrop?: boolean;
     node: TreeItem;
     path: NumberOrStringArray;
     treeIndex: number;
@@ -189,6 +191,8 @@ export interface ThemeProps extends ThemeTreeProps {
 }
 
 export interface ReactSortableTreeProps extends ThemeTreeProps {
+    autoSnapRowsAfter?: number;
+    autoSnapRowsBefore?: number;
     treeData: TreeItem[];
     onChange(treeData: TreeItem[]): void;
     getNodeKey?(data: TreeNode & TreeIndex): string | number;

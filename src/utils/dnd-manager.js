@@ -6,6 +6,8 @@ import { memoizedInsertNode } from './memoized-tree-data-utils';
 export default class DndManager {
   constructor(treeRef) {
     this.treeRef = treeRef;
+    this.lastAutoSnapResult = false;
+    this.lastCanDrop = false;
     this.lastHoverClientOffset = null;
   }
 
@@ -47,6 +49,132 @@ export default class DndManager {
 
   get maxDepth() {
     return this.treeRef.props.maxDepth;
+  }
+
+  get autoSnapEnabled() {
+    return this.treeRef.autoSnapEnabled;
+  }
+
+  get autoSnapRowsAfter() {
+    return this.treeRef.autoSnapRowsAfter;
+  }
+
+  get autoSnapRowsBefore() {
+    return this.treeRef.autoSnapRowsBefore;
+  }
+
+  get getRows() {
+    return this.treeRef.getRows;
+  }
+
+  autoSnapRaw({ monitor, targetDepth, targetIndex}) {
+    const {autoSnapRowsAfter, autoSnapRowsBefore, treeData} = this;
+
+    const draggedNode = monitor.getItem().node;
+
+    const rows = this.getRows(treeData);
+
+    const coordsToCheck = [];
+
+    const coordsToCheckAddAllLevelsForIndex = ({ flatTreeIndex, maxDepth }) => {
+      let currentTargetDepth = maxDepth;
+
+      do {
+        coordsToCheck.push({
+          depth: currentTargetDepth,
+          minimumTreeIndex: flatTreeIndex
+        })
+        currentTargetDepth -= 1;
+      } while (currentTargetDepth > -1);
+    }
+
+    coordsToCheckAddAllLevelsForIndex({
+      flatTreeIndex: targetIndex,
+      maxDepth: targetDepth
+    });
+
+    for (
+      let i = targetIndex - 1;
+      i >= Math.max(targetIndex - autoSnapRowsBefore, 0);
+      i-=1
+    ) {
+      const row = rows[i-1];
+
+      coordsToCheckAddAllLevelsForIndex({
+        flatTreeIndex: row ? i : 0,
+        maxDepth: row ? row.path.length : 0,
+      });
+    }
+
+    for (
+      let i = targetIndex + 1;
+      i <= Math.min(targetIndex + autoSnapRowsAfter, rows.length);
+      i+=1
+    ) {
+      const row = rows[i-1];
+
+      coordsToCheckAddAllLevelsForIndex({
+        flatTreeIndex: row ? i : rows.length,
+        maxDepth: row ? row.path.length : 0,
+      });
+    }
+
+    for (let i = 0; i < coordsToCheck.length; i+=1) {
+      const { depth, minimumTreeIndex } = coordsToCheck[i];
+
+      const addedResult = memoizedInsertNode({
+        treeData,
+        newNode: draggedNode,
+        depth,
+        getNodeKey: this.getNodeKey,
+        minimumTreeIndex,
+        expandParent: true,
+      });
+
+      coordsToCheck[i].addedResult = addedResult;
+
+      if (this.customCanDrop({
+        node: draggedNode,
+        prevPath: monitor.getItem().path,
+        prevParent: monitor.getItem().parentNode,
+        prevTreeIndex: monitor.getItem().treeIndex, // Equals -1 when dragged from external tree
+        nextPath: addedResult.path,
+        nextParent: addedResult.parentNode,
+        nextTreeIndex: addedResult.treeIndex,
+      })
+      ) {
+        const resultPath = [...addedResult.path];
+        resultPath.pop();
+
+        coordsToCheck[i].result = {
+          path: resultPath,
+          targetIndex: addedResult.treeIndex,
+          targetDepth: resultPath.length || -1,
+        }
+      } else {
+        coordsToCheck[i].result = false;
+      }
+    }
+
+
+    let result = false;
+
+    for (let i = 0; i < coordsToCheck.length; i+=1) {
+      if (coordsToCheck[i].result) {
+        result = coordsToCheck[i].result;
+        break;
+      }
+    }
+
+    console.log('dnd-manager: autoSnap:', { draggedNode, targetDepth, targetIndex, coordsToCheck, result });
+
+    return result;
+  };
+
+  autoSnap(args) {
+    this.lastAutoSnapResult =  this.autoSnapRaw(args);
+    // console.log('dnd-manager: hover(): lastAutoSnapResult:', this.lastAutoSnapResult);
+    return this.lastAutoSnapResult;
   }
 
   getTargetDepth(dropTargetProps, monitor, component) {
@@ -113,7 +241,7 @@ export default class DndManager {
     return targetDepth;
   }
 
-  canDrop(dropTargetProps, monitor) {
+  canDropRaw(dropTargetProps, monitor) {
     if (!monitor.isOver()) {
       return false;
     }
@@ -130,6 +258,19 @@ export default class DndManager {
       typeof aboveNode.children === 'function'
     ) {
       return false;
+    }
+
+    if (this.autoSnapEnabled) {
+      // позже произойдёт проверка
+      this.autoSnap({
+        dropTargetProps,
+        monitor,
+        targetDepth,
+        targetIndex:
+        dropTargetProps.listIndex
+      });
+
+      return !!this.lastAutoSnapResult;
     }
 
     if (typeof this.customCanDrop === 'function') {
@@ -155,6 +296,11 @@ export default class DndManager {
     }
 
     return true;
+  }
+
+  canDrop(dropTargetProps, monitor) {
+    this.lastCanDrop = this.canDropRaw(dropTargetProps, monitor);
+    return this.lastCanDrop;
   }
 
   wrapSource(el) {
@@ -204,7 +350,9 @@ export default class DndManager {
   wrapTarget(el) {
     const nodeDropTarget = {
       drop: (dropTargetProps, monitor, component) => {
-        const result = {
+        console.log('dnd-manager: drop(): ', dropTargetProps);
+
+        let result = {
           node: monitor.getItem().node,
           path: monitor.getItem().path,
           treeIndex: monitor.getItem().treeIndex,
@@ -212,6 +360,18 @@ export default class DndManager {
           minimumTreeIndex: dropTargetProps.treeIndex,
           depth: this.getTargetDepth(dropTargetProps, monitor, component),
         };
+
+        if (this.lastAutoSnapResult) {
+
+          const {path, targetIndex, targetDepth} = this.lastAutoSnapResult;
+
+          result = {
+            ...result,
+            path,
+            treeIndex: targetIndex,
+            depth: targetDepth,
+          }
+        }
 
         this.drop(result);
 
@@ -224,8 +384,11 @@ export default class DndManager {
          * from https://github.com/frontend-collective/react-sortable-tree/issues/483#issuecomment-581139473
          * */
 
+        // eslint-disable-next-line no-param-reassign,no-underscore-dangle
+        // dropTargetProps.__test_changed = (dropTargetProps.__test_changed || 0) + 1
+
         let targetIndex = 0;
-        const targetDepth = this.getTargetDepth(
+        let targetDepth = this.getTargetDepth(
           dropTargetProps,
           monitor,
           component
@@ -254,6 +417,7 @@ export default class DndManager {
         if (!needsRedraw) {
           return;
         }
+
         // eslint-disable-next-line react/no-find-dom-node
         const hoverBoundingRect = findDOMNode(
           component
@@ -275,14 +439,22 @@ export default class DndManager {
           targetIndex = dropTargetProps.treeIndex + 1;
         }
 
-        // console.log('dnd-manager: hover:', {...dropTargetProps, draggedNode, targetDepth, targetIndex});
+        let { path } = monitor.getItem();
+
+        if (this.autoSnapEnabled && typeof this.customCanDrop === 'function') {
+            this.autoSnap({dropTargetProps, monitor, targetDepth, targetIndex});
+        }
+
+        if (this.lastAutoSnapResult) {
+          ({ path, targetIndex, targetDepth} = this.lastAutoSnapResult);
+        }
 
         // throttle `dragHover` work to available animation frames
         cancelAnimationFrame(this.rafId);
         this.rafId = requestAnimationFrame(() => {
           this.dragHover({
             node: draggedNode,
-            path: monitor.getItem().path,
+            path,
             minimumTreeIndex: targetIndex,
             // minimumTreeIndex: dropTargetProps.listIndex,
             depth: targetDepth,
